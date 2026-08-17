@@ -36,3 +36,25 @@ export function kvCacheBytes(config, contextLength) {
 export function requiredBytes(fileBytes, config, contextLength) {
   return fileBytes + OVERHEAD_BYTES + kvCacheBytes(config, contextLength);
 }
+
+// 「35B-A3B」のように、総パラメータ数のあとに active 数が付く表記を読む。
+const MOE_NAME_RE = /[-_]A(\d+(?:\.\d+)?)B\b/i;
+
+export function detectMoE(modelName, config) {
+  const matched = modelName.match(MOE_NAME_RE);
+  if (matched) {
+    return { isMoE: true, activeBillions: Number(matched[1]) };
+  }
+  const experts = config.num_experts ?? config.num_local_experts;
+  if (experts && experts > 1) {
+    return { isMoE: true, activeBillions: null };
+  }
+  return { isMoE: false, activeBillions: null };
+}
+
+// エキスパートをCPU側に置くと、GPUに載るのは active 相当の重みだけになる。
+// 比率で概算し、KVキャッシュとオーバーヘッドは変わらないものとして足す。
+export function offloadedBytes(fileBytes, totalBillions, activeBillions, config, contextLength) {
+  const ratio = activeBillions / totalBillions;
+  return fileBytes * ratio + OVERHEAD_BYTES + kvCacheBytes(config, contextLength);
+}

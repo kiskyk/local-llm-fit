@@ -50,6 +50,30 @@ test('必要VRAMはファイルサイズとオーバーヘッドとKVキャッ�
   assert.equal(total, fileBytes + OVERHEAD_BYTES + kvCacheBytes(CONFIG, 4096));
 });
 
+import { detectMoE, offloadedBytes } from './fit.js';
+
+test('モデル名のA3B表記からMoEとactiveパラメータ数を読む', () => {
+  const r = detectMoE('Qwen3.6-35B-A3B', {});
+  assert.equal(r.isMoE, true);
+  assert.equal(r.activeBillions, 3);
+});
+
+test('configのnum_expertsでもMoEと判定する', () => {
+  assert.equal(detectMoE('some-model', { num_experts: 8 }).isMoE, true);
+});
+
+test('denseモデルはMoEではない', () => {
+  assert.equal(detectMoE('gemma-3-27b-it', {}).isMoE, false);
+});
+
+test('オフロード時の必要量はactive比率で縮む', () => {
+  const config = { num_hidden_layers: 48, num_attention_heads: 32, num_key_value_heads: 8, hidden_size: 4096 };
+  const full = 20 * GB;
+  const offloaded = offloadedBytes(full, 35, 3, config, 4096);
+  assert.ok(offloaded < full);
+  assert.ok(offloaded > OVERHEAD_BYTES);
+});
+
 test('brainの実測と整合する（コンテキストを除いた分）', () => {
   // gemma-3-27b-it: 14.3GB、16GB環境で余裕0.9GB
   assert.ok(Math.abs((16 * GB - (14.3 * GB + OVERHEAD_BYTES)) - 0.9 * GB) < 0.01 * GB);
