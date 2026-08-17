@@ -62,7 +62,7 @@ const LABEL = {
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function amazonSearchUrl(gpu) {
-  const tag = 'ASSOCIATE_TAG'; // アソシエイトIDを取得したら差し替える
+  const tag = 'kiskyk-22';
   // Apple統合メモリは型番そのままだとAmazon検索に引っかからないため、searchで上書きする
   return `https://www.amazon.co.jp/s?k=${encodeURIComponent(gpu.search ?? gpu.name)}&tag=${tag}`;
 }
