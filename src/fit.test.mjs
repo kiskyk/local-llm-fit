@@ -167,3 +167,37 @@ test('KVキャッシュ計算に必要なconfigが揃っているか判定する
   assert.equal(hasUsableConfig({}), false);
   assert.equal(hasUsableConfig(null), false);
 });
+
+test('gguf.totalがあればモデル名よりそちらを総パラメータ数にする', () => {
+  const result = normalizeModel({
+    modelId: 'unsloth/Qwen-99B-GGUF',
+    tree: [{ path: 'a-Q4_K_M.gguf', size: 1000, type: 'file' }],
+    config: {},
+    gguf: { total: 27320697856 },
+  });
+  assert.ok(Math.abs(result.totalBillions - 27.3) < 0.1);
+});
+
+test('configが使えなくてもパラメータ数からKVを概算して判定できる', () => {
+  // 27Bクラス・14.3GBファイル・16GB環境: configなしでも tight か lower-quant 側に落ちる
+  const m = {
+    name: 'x-27B-GGUF',
+    config: {},
+    totalBillions: 27.3,
+    files: [{ filename: 'a-Q4_K_M.gguf', sizeBytes: 14.3 * GB }],
+  };
+  const r = classify({ vramBytes: 16 * GB, contextLength: 4096, model: m });
+  assert.ok(Number.isFinite(r.headroomBytes ?? NaN) || r.verdict === 'no');
+  assert.notEqual(r.verdict, 'comfortable');
+});
+
+test('configもパラメータ数もない巨大モデルはcomfortableと誤判定しない', () => {
+  const m = {
+    name: 'mystery-model',
+    config: {},
+    totalBillions: null,
+    files: [{ filename: 'a-Q4_K_M.gguf', sizeBytes: 60 * GB }],
+  };
+  const r = classify({ vramBytes: 8 * GB, contextLength: 4096, model: m });
+  assert.equal(r.verdict, 'no');
+});

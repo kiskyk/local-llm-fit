@@ -61,7 +61,22 @@ export function offloadedBytes(fileBytes, totalBillions, activeBillions, config,
 
 const TIGHT_MARGIN_BYTES = 1 * GB;
 
+// configが読めないモデル向けのKV概算。GQA世代の実構成（Llama-3-8B、gemma-3-27B、
+// Qwen-32B）で1トークン・1Bパラメータあたり16〜24KBに収まるため、中間の20KBを使う。
+const KV_FALLBACK_BYTES_PER_TOKEN_PER_B = 20e3;
+
+// KVキャッシュ: 正確なconfigがあれば厳密式、なければパラメータ数からの概算、
+// どちらも無ければ0（呼び出し側がパラメータ数不明のモデルを弾く前提）。
+function modelKvBytes(model, contextLength) {
+  if (hasUsableConfig(model.config)) return kvCacheBytes(model.config, contextLength);
+  if (Number.isFinite(model.totalBillions)) {
+    return KV_FALLBACK_BYTES_PER_TOKEN_PER_B * model.totalBillions * contextLength;
+  }
+  return 0;
+}
+
 export function classify({ vramBytes, contextLength, model }) {
+  const kv = modelKvBytes(model, contextLength);
   const candidates = model.files
     .map((f) => ({ ...f, quant: parseQuant(f.filename) }))
     .filter((f) => f.quant !== null)
@@ -70,7 +85,7 @@ export function classify({ vramBytes, contextLength, model }) {
   const best = candidates[0] ?? null;
 
   for (const [index, file] of candidates.entries()) {
-    const need = requiredBytes(file.sizeBytes, model.config, contextLength);
+    const need = file.sizeBytes + OVERHEAD_BYTES + kv;
     const headroomBytes = vramBytes - need;
     if (headroomBytes < 0) continue;
 
@@ -91,7 +106,7 @@ export function classify({ vramBytes, contextLength, model }) {
 
   const moe = detectMoE(model.name, model.config);
   if (moe.isMoE && moe.activeBillions && best) {
-    const need = offloadedBytes(best.sizeBytes, model.totalBillions, moe.activeBillions, model.config, contextLength);
+    const need = best.sizeBytes * (moe.activeBillions / model.totalBillions) + OVERHEAD_BYTES + kv;
     if (need <= vramBytes) {
       return {
         verdict: 'offload',
@@ -128,14 +143,18 @@ export function hasUsableConfig(config) {
   );
 }
 
-export function normalizeModel({ modelId, tree, config }) {
+export function normalizeModel({ modelId, tree, config, gguf }) {
   const files = tree
     .filter((entry) => entry.type === 'file' && entry.path.toLowerCase().endsWith('.gguf'))
     .map((entry) => ({ filename: entry.path, sizeBytes: entry.size }));
+  // HF APIのggufメタデータが返す正確なパラメータ数を優先し、無ければ名前から読む
+  const totalBillions = Number.isFinite(gguf?.total)
+    ? gguf.total / 1e9
+    : parseTotalBillions(modelId);
   return {
     name: modelId,
     config,
-    totalBillions: parseTotalBillions(modelId),
+    totalBillions,
     files,
   };
 }
