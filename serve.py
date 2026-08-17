@@ -18,8 +18,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 'https://huggingface.co' + path,
                 headers={'User-Agent': 'local-llm-fit/0.1'},
             )
-            with urllib.request.urlopen(req) as res:
-                body = res.read()
+            try:
+                with urllib.request.urlopen(req, timeout=15) as res:
+                    body = res.read()
+            except Exception:
+                self.send_error(502, 'upstream error')
+                return
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -27,6 +31,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
-with socketserver.TCPServer(('127.0.0.1', PORT), functools.partial(Handler, directory=ROOT)) as httpd:
+# シングルスレッドだと中継1本の詰まりで全リクエストが固まるため、スレッド化する
+class ThreadingServer(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+with ThreadingServer(('127.0.0.1', PORT), functools.partial(Handler, directory=ROOT)) as httpd:
     print(f'http://127.0.0.1:{PORT}')
     httpd.serve_forever()
