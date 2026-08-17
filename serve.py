@@ -6,6 +6,11 @@ PORT = 8772
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    # Cache-Controlを返さないとブラウザのヒューリスティックキャッシュで編集が反映されない
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-cache')
+        super().end_headers()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == '/api/hf':

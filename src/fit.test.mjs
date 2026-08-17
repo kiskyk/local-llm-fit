@@ -216,3 +216,14 @@ test('分割GGUFは同じ量子化ラベルでサイズを合算する', () => {
   const q8 = result.files.find((f) => f.filename.includes('Q8_0'));
   assert.equal(q8.sizeBytes, 32 * GB);
 });
+
+import { reverseLookup } from './fit.js';
+
+test('逆引き: モデルに対して各GPUの判定を返す', () => {
+  const gpus = [{ name: 'small', vramGB: 8 }, { name: 'big', vramGB: 16 }];
+  const m = model([{ filename: 'a-Q4_K_M.gguf', sizeBytes: 8 * GB }]);
+  const rows = reverseLookup(gpus, m, 4096);
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find((r) => r.gpu.name === 'small').result.verdict, 'no');
+  assert.equal(rows.find((r) => r.gpu.name === 'big').result.verdict, 'comfortable');
+});

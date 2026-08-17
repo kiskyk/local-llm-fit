@@ -1,4 +1,4 @@
-import { classify, normalizeModel } from './fit.js';
+import { classify, normalizeModel, reverseLookup } from './fit.js';
 
 const hf = (path) => fetch(`/api/hf?path=${encodeURIComponent(path)}`).then((r) => {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -48,9 +48,10 @@ const LABEL = {
 
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-function amazonSearchUrl(gpuName) {
+function amazonSearchUrl(gpu) {
   const tag = 'ASSOCIATE_TAG'; // アソシエイトIDを取得したら差し替える
-  return `https://www.amazon.co.jp/s?k=${encodeURIComponent(gpuName)}&tag=${tag}`;
+  // Apple統合メモリは型番そのままだとAmazon検索に引っかからないため、searchで上書きする
+  return `https://www.amazon.co.jp/s?k=${encodeURIComponent(gpu.search ?? gpu.name)}&tag=${tag}`;
 }
 
 // 選択中のGPUで「動かない」判定が出たモデルにも手が届く、VRAMの多いGPUを1つ提案する
@@ -68,7 +69,7 @@ export function render(container, judged, upgrade = null) {
     ((b.model.downloads ?? 0) - (a.model.downloads ?? 0)));
   const note = `<p class="note">この判定は推定値です。実測で確認できているのは RTX 5070 Ti (16GB) のみで、実際の使用量はコンテキスト長や実行環境によって変わります。</p>`;
   const upgradeHtml = upgrade
-    ? `<p class="note">より大きなモデルを余裕をもって動かすなら: <a href="${amazonSearchUrl(upgrade.name)}" target="_blank" rel="noopener sponsored">${esc(upgrade.name)}（${upgrade.vramGB}GB）をAmazonで探す</a></p>`
+    ? `<p class="note">より大きなモデルを余裕をもって動かすなら: <a href="${amazonSearchUrl(upgrade)}" target="_blank" rel="noopener sponsored">${esc(upgrade.name)}（${upgrade.vramGB}GB）をAmazonで探す</a></p>`
     : '';
   container.innerHTML = note + judged.map(({ model, result }) => {
     const [text, color] = LABEL[result.verdict];
@@ -81,6 +82,24 @@ export function render(container, judged, upgrade = null) {
   }).join('') + upgradeHtml;
 }
 
+// 逆引き結果: 判定の良い順 → 同じ判定ならVRAMの小さい（＝最小十分な）GPUを上に
+export function renderReverse(container, rows) {
+  rows.sort((a, b) =>
+    (ORDER.indexOf(a.result.verdict) - ORDER.indexOf(b.result.verdict)) ||
+    (a.gpu.vramGB - b.gpu.vramGB));
+  container.innerHTML = rows.map(({ gpu, result }) => {
+    const [text, color] = LABEL[result.verdict];
+    const quant = result.quant ? `｜推奨 ${result.quant}` : '';
+    const warn = result.warning ? `<div class="warn">${esc(result.warning)}</div>` : '';
+    const buy = result.verdict === 'no' ? '' :
+      `｜<a href="${amazonSearchUrl(gpu)}" target="_blank" rel="noopener sponsored">Amazonで探す</a>`;
+    return `<div class="item">
+      <span class="badge" style="background:${color};color:#fff8ee">${text}</span>
+      <strong>${esc(gpu.name)}（${gpu.vramGB}GB）</strong>${quant}${buy}${warn}
+    </div>`;
+  }).join('');
+}
+
 async function main() {
   const gpuSelect = document.getElementById('gpu');
   const gpus = await fetch('./data/gpus.json').then((r) => r.json());
@@ -88,22 +107,45 @@ async function main() {
 
   const button = document.getElementById('go');
   const container = document.getElementById('result');
-  let models = null;
+  const modelSelect = document.getElementById('model');
+  const revButton = document.getElementById('rev');
+  const revContainer = document.getElementById('revResult');
+
+  // 先読みしておく（逆引きのセレクトを埋め、判定ボタンの待ちも減らす）
+  const modelsPromise = loadModels().then((models) => {
+    modelSelect.innerHTML = models.map((m, i) => `<option value="${i}">${esc(m.name)}</option>`).join('');
+    return models;
+  });
+  modelsPromise.catch(() => { modelSelect.innerHTML = '<option>読み込み失敗</option>'; });
+
+  const contextLength = () => Number(document.getElementById('ctx').value);
 
   button.addEventListener('click', async () => {
     button.disabled = true;
     button.textContent = '取得中…';
     try {
-      models ??= await loadModels();
+      const models = await modelsPromise;
       const vramBytes = gpus[Number(gpuSelect.value)].vramGB * 1024 ** 3;
-      const contextLength = Number(document.getElementById('ctx').value);
-      const judged = models.map((model) => ({ model, result: classify({ vramBytes, contextLength, model }) }));
+      const judged = models.map((model) => ({ model, result: classify({ vramBytes, contextLength: contextLength(), model }) }));
       render(container, judged, upgradeSuggestion(gpus, gpus[Number(gpuSelect.value)].vramGB));
     } catch (e) {
       container.innerHTML = `<p class="warn">モデル一覧の取得に失敗しました（${esc(String(e))}）。時間をおいて再読み込みしてください。</p>`;
     } finally {
       button.disabled = false;
       button.textContent = '判定する';
+    }
+  });
+
+  revButton.addEventListener('click', async () => {
+    revButton.disabled = true;
+    try {
+      const models = await modelsPromise;
+      const model = models[Number(modelSelect.value)];
+      if (model) renderReverse(revContainer, reverseLookup(gpus, model, contextLength()));
+    } catch (e) {
+      revContainer.innerHTML = `<p class="warn">モデル一覧の取得に失敗しました（${esc(String(e))}）。時間をおいて再読み込みしてください。</p>`;
+    } finally {
+      revButton.disabled = false;
     }
   });
 }

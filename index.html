@@ -7,7 +7,7 @@
 <style>
 :root { --paper:#f5efe3; --card:#fffcf5; --ink:#43362a; --muted:#93826d; --wood:#a8683a; --line:#e6dbc7; }
 body { font-family:"Hiragino Sans","Yu Gothic UI",system-ui,sans-serif; background:var(--paper); color:var(--ink); max-width:760px; margin:0 auto; padding:24px 16px 48px; line-height:1.7; }
-select { font-size:1rem; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+select { font-size:1rem; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; max-width:100%; }
 button { font-size:1.05rem; font-weight:600; padding:12px 32px; margin-top:16px; border:none; border-radius:999px; background:var(--wood); color:#fff8ee; cursor:pointer; }
 button:disabled { opacity:.5; cursor:wait; }
 .note { font-size:.85rem; color:var(--muted); border-left:3px solid var(--line); padding-left:10px; margin:20px 0; }
@@ -26,6 +26,11 @@ button:disabled { opacity:.5; cursor:wait; }
 </select></label>
 <button id="go">判定する</button>
 <div id="result"></div>
+<h2>モデルから逆引き</h2>
+<p>動かしたいモデルを選ぶと、どのGPUなら実用品質で動くかを表示します。</p>
+<label>モデル <select id="model"><option>読み込み中…</option></select></label>
+<button id="rev">GPUを探す</button>
+<div id="revResult"></div>
 <footer class="note">当サイトはAmazonアソシエイト・プログラムの参加者です。</footer>
 <script type="module" src="./src/ui.js"></script>
 </body>

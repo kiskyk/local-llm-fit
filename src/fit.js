@@ -120,6 +120,14 @@ export function classify({ vramBytes, contextLength, model }) {
   return { verdict: 'no', quant: null, headroomBytes: null, warning: '' };
 }
 
+// 逆引き: 1つのモデルを各GPUで判定する
+export function reverseLookup(gpus, model, contextLength) {
+  return gpus.map((gpu) => ({
+    gpu,
+    result: classify({ vramBytes: gpu.vramGB * GB, contextLength, model }),
+  }));
+}
+
 // 「27b」「35B」のような表記を拾う。A3B（active数）は別に扱うため、
 // 直前がハイフンやドットで、直後がBで終わるものだけを対象にする。
 const SIZE_RE = /(?:^|[-_.])(\d+(?:\.\d+)?)B(?:[-_.]|$)/i;

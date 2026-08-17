@@ -12,6 +12,6 @@
   { "name": "RTX 3090", "vramGB": 24 },
   { "name": "RTX 3080", "vramGB": 10 },
   { "name": "RTX 3060 (12GB)", "vramGB": 12 },
-  { "name": "Apple M4 Pro (24GB統合)", "vramGB": 16 },
-  { "name": "Apple M4 Max (48GB統合)", "vramGB": 36 }
+  { "name": "Apple M4 Pro (24GB統合)", "vramGB": 16, "search": "Mac M4 Pro 24GB" },
+  { "name": "Apple M4 Max (48GB統合)", "vramGB": 36, "search": "Mac M4 Max 48GB" }
 ]
