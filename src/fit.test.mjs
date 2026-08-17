@@ -134,3 +134,36 @@ test('denseで到底入らないときは no', () => {
   const r = classify({ vramBytes: 8 * GB2, contextLength: 4096, model: m });
   assert.equal(r.verdict, 'no');
 });
+
+import { parseTotalBillions, normalizeModel, hasUsableConfig } from './fit.js';
+
+test('モデル名から総パラメータ数を読む', () => {
+  assert.equal(parseTotalBillions('gemma-3-27b-it-GGUF'), 27);
+  assert.equal(parseTotalBillions('Qwen3.6-35B-A3B'), 35);
+  assert.equal(parseTotalBillions('Llama-3.2-1B-Instruct'), 1);
+  assert.equal(parseTotalBillions('some-model-without-size'), null);
+});
+
+test('HFの応答をclassifyが読める形に直す', () => {
+  const result = normalizeModel({
+    modelId: 'bartowski/gemma-3-27b-it-GGUF',
+    tree: [
+      { path: 'gemma-3-27b-it-Q4_K_M.gguf', size: 16000000000, type: 'file' },
+      { path: 'README.md', size: 1000, type: 'file' },
+      { path: 'imatrix', size: 0, type: 'directory' },
+    ],
+    config: { num_hidden_layers: 62 },
+  });
+  assert.equal(result.name, 'bartowski/gemma-3-27b-it-GGUF');
+  assert.equal(result.totalBillions, 27);
+  assert.equal(result.files.length, 1);
+  assert.equal(result.files[0].filename, 'gemma-3-27b-it-Q4_K_M.gguf');
+  assert.equal(result.files[0].sizeBytes, 16000000000);
+});
+
+test('KVキャッシュ計算に必要なconfigが揃っているか判定する', () => {
+  assert.equal(hasUsableConfig({ num_hidden_layers: 62, num_attention_heads: 32, hidden_size: 5376 }), true);
+  assert.equal(hasUsableConfig({ num_hidden_layers: 62 }), false);
+  assert.equal(hasUsableConfig({}), false);
+  assert.equal(hasUsableConfig(null), false);
+});

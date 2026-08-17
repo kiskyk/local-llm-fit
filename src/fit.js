@@ -104,3 +104,38 @@ export function classify({ vramBytes, contextLength, model }) {
 
   return { verdict: 'no', quant: null, headroomBytes: null, warning: '' };
 }
+
+// 「27b」「35B」のような表記を拾う。A3B（active数）は別に扱うため、
+// 直前がハイフンやドットで、直後がBで終わるものだけを対象にする。
+const SIZE_RE = /(?:^|[-_.])(\d+(?:\.\d+)?)B(?:[-_.]|$)/i;
+
+export function parseTotalBillions(name) {
+  // A3B のような active 表記は総数ではないので除外する
+  const cleaned = name.replace(/[-_]A\d+(?:\.\d+)?B\b/i, '');
+  const matched = cleaned.match(SIZE_RE);
+  return matched ? Number(matched[1]) : null;
+}
+
+// GGUFリポジトリは config.json を持たないことが多い。KVキャッシュ計算に
+// 必要なキーが欠けたまま classify に渡すと NaN 比較で誤判定するため、
+// 呼び出し側はこれで事前に弾く。
+export function hasUsableConfig(config) {
+  return Boolean(
+    config &&
+    Number.isFinite(config.num_hidden_layers) &&
+    Number.isFinite(config.num_attention_heads) &&
+    Number.isFinite(config.hidden_size),
+  );
+}
+
+export function normalizeModel({ modelId, tree, config }) {
+  const files = tree
+    .filter((entry) => entry.type === 'file' && entry.path.toLowerCase().endsWith('.gguf'))
+    .map((entry) => ({ filename: entry.path, sizeBytes: entry.size }));
+  return {
+    name: modelId,
+    config,
+    totalBillions: parseTotalBillions(modelId),
+    files,
+  };
+}
