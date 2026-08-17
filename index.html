@@ -28,6 +28,8 @@ button:disabled { opacity:.5; cursor:wait; }
 <div id="result"></div>
 <h2>モデルから逆引き</h2>
 <p>動かしたいモデルを選ぶと、どのGPUなら実用品質で動くかを表示します。</p>
+<p><input id="msearch" type="search" placeholder="モデル名で検索（例: gemma, qwen coder）" style="font-size:1rem;padding:6px 10px;border:1px solid var(--line);border-radius:8px;width:min(320px,100%)">
+<button id="msbtn" style="font-size:.95rem;padding:6px 18px;margin:0">検索</button></p>
 <label>モデル <select id="model"><option>読み込み中…</option></select></label>
 <button id="rev">GPUを探す</button>
 <div id="revResult"></div>

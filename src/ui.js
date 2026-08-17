@@ -5,36 +5,49 @@ const hf = (path) => fetch(`/api/hf?path=${encodeURIComponent(path)}`).then((r) 
   return r.json();
 });
 
-// 一覧APIはファイルサイズを返さないため、モデルごとに /tree/main を追加で取得する。
-// 直列だと50件×2リクエストで待ちが長いので、少数ずつ並列にする。
-export async function loadModels(limit = 50) {
-  // pipeline_tagで絞らないと、DL数の多い音声認識・TTS・埋め込みモデルがLLMより上に並ぶ
-  const list = await hf(`/api/models?pipeline_tag=text-generation&filter=gguf&sort=downloads&direction=-1&limit=${limit}`);
+// 一覧APIはファイルサイズを返さないため、モデルごとに /tree/main を追加で取得する
+async function fetchModel(entry) {
+  try {
+    const [tree, detail] = await Promise.all([
+      hf(`/api/models/${entry.modelId}/tree/main`),
+      hf(`/api/models/${entry.modelId}`),
+    ]);
+    const model = normalizeModel({
+      modelId: entry.modelId,
+      tree,
+      config: detail.config ?? {},
+      gguf: detail.gguf,
+    });
+    model.downloads = entry.downloads ?? 0;
+    if (model.files.length > 0 && model.totalBillions) return model;
+  } catch {
+    // 1件取れなくても一覧全体は出す
+  }
+  return null;
+}
+
+// 直列だと件数×2リクエストで待ちが長いので、少数ずつ並列にする
+async function fetchModels(list) {
   const results = [];
   const CONCURRENCY = 8;
   for (let i = 0; i < list.length; i += CONCURRENCY) {
-    const chunk = await Promise.all(list.slice(i, i + CONCURRENCY).map(async (entry) => {
-      try {
-        const [tree, detail] = await Promise.all([
-          hf(`/api/models/${entry.modelId}/tree/main`),
-          hf(`/api/models/${entry.modelId}`),
-        ]);
-        const model = normalizeModel({
-          modelId: entry.modelId,
-          tree,
-          config: detail.config ?? {},
-          gguf: detail.gguf,
-        });
-        model.downloads = entry.downloads ?? 0;
-        if (model.files.length > 0 && model.totalBillions) return model;
-      } catch {
-        // 1件取れなくても一覧全体は出す
-      }
-      return null;
-    }));
+    const chunk = await Promise.all(list.slice(i, i + CONCURRENCY).map(fetchModel));
     results.push(...chunk.filter(Boolean));
   }
   return results;
+}
+
+export async function loadModels(limit = 50) {
+  // pipeline_tagで絞らないと、DL数の多い音声認識・TTS・埋め込みモデルがLLMより上に並ぶ
+  const list = await hf(`/api/models?pipeline_tag=text-generation&filter=gguf&sort=downloads&direction=-1&limit=${limit}`);
+  return fetchModels(list);
+}
+
+// Hugging Face全体からキーワード検索する（一覧の50件に無いモデルも逆引きできるように）
+export async function searchModels(query, limit = 10) {
+  const q = encodeURIComponent(query);
+  const list = await hf(`/api/models?search=${q}&filter=gguf&pipeline_tag=text-generation&sort=downloads&direction=-1&limit=${limit}`);
+  return fetchModels(list);
 }
 
 const ORDER = ['comfortable', 'tight', 'lower-quant', 'offload', 'no'];
@@ -111,12 +124,41 @@ async function main() {
   const revButton = document.getElementById('rev');
   const revContainer = document.getElementById('revResult');
 
+  // 逆引きセレクトの中身。検索するとHFの検索結果に置き換わる
+  let revModels = [];
+  const fillModelSelect = (models, emptyMessage) => {
+    revModels = models;
+    modelSelect.innerHTML = models.length
+      ? models.map((m, i) => `<option value="${i}">${esc(m.name)}</option>`).join('')
+      : `<option>${emptyMessage}</option>`;
+  };
+
   // 先読みしておく（逆引きのセレクトを埋め、判定ボタンの待ちも減らす）
   const modelsPromise = loadModels().then((models) => {
-    modelSelect.innerHTML = models.map((m, i) => `<option value="${i}">${esc(m.name)}</option>`).join('');
+    fillModelSelect(models, '読み込み失敗');
     return models;
   });
   modelsPromise.catch(() => { modelSelect.innerHTML = '<option>読み込み失敗</option>'; });
+
+  const searchInput = document.getElementById('msearch');
+  const searchButton = document.getElementById('msbtn');
+  const doSearch = async () => {
+    const query = searchInput.value.trim();
+    searchButton.disabled = true;
+    searchButton.textContent = '検索中…';
+    try {
+      // 空欄ならダウンロード数順の一覧に戻す
+      fillModelSelect(query ? await searchModels(query) : await modelsPromise, '該当なし');
+    } catch (e) {
+      modelSelect.innerHTML = '<option>検索失敗</option>';
+      revModels = [];
+    } finally {
+      searchButton.disabled = false;
+      searchButton.textContent = '検索';
+    }
+  };
+  searchButton.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
 
   const contextLength = () => Number(document.getElementById('ctx').value);
 
@@ -139,11 +181,9 @@ async function main() {
   revButton.addEventListener('click', async () => {
     revButton.disabled = true;
     try {
-      const models = await modelsPromise;
-      const model = models[Number(modelSelect.value)];
+      await modelsPromise.catch(() => {});
+      const model = revModels[Number(modelSelect.value)];
       if (model) renderReverse(revContainer, reverseLookup(gpus, model, contextLength()));
-    } catch (e) {
-      revContainer.innerHTML = `<p class="warn">モデル一覧の取得に失敗しました（${esc(String(e))}）。時間をおいて再読み込みしてください。</p>`;
     } finally {
       revButton.disabled = false;
     }
