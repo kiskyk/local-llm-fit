@@ -80,3 +80,57 @@ test('brainの実測と整合する（コンテキストを除いた分）', () 
   // gpt-oss-20b: 15.1GB、16GB環境で余裕0.1GB
   assert.ok(Math.abs((16 * GB - (15.1 * GB + OVERHEAD_BYTES)) - 0.1 * GB) < 0.01 * GB);
 });
+
+import { classify } from './fit.js';
+
+const GB2 = 1024 ** 3;
+const CFG = { num_hidden_layers: 40, num_attention_heads: 32, num_key_value_heads: 8, hidden_size: 4096 };
+
+function model(files, name = 'test-model-13B', totalBillions = 13) {
+  return { name, config: CFG, totalBillions, files };
+}
+
+test('余裕があるときは comfortable', () => {
+  const m = model([{ filename: 'a-Q4_K_M.gguf', sizeBytes: 8 * GB2 }]);
+  const r = classify({ vramBytes: 16 * GB2, contextLength: 4096, model: m });
+  assert.equal(r.verdict, 'comfortable');
+  assert.equal(r.quant, 'Q4_K_M');
+});
+
+test('余裕が1GB未満なら tight', () => {
+  const m = model([{ filename: 'a-Q4_K_M.gguf', sizeBytes: 14.5 * GB2 }]);
+  const r = classify({ vramBytes: 16 * GB2, contextLength: 512, model: m });
+  assert.equal(r.verdict, 'tight');
+});
+
+test('上位が入らないときは下の量子化を選ぶ', () => {
+  const m = model([
+    { filename: 'a-Q6_K.gguf', sizeBytes: 20 * GB2 },
+    { filename: 'a-Q4_K_M.gguf', sizeBytes: 9 * GB2 },
+  ]);
+  const r = classify({ vramBytes: 16 * GB2, contextLength: 4096, model: m });
+  assert.equal(r.quant, 'Q4_K_M');
+  assert.equal(r.verdict, 'lower-quant');
+});
+
+test('Q3_K_M未満しか入らないときは警告を付ける', () => {
+  const m = model([
+    { filename: 'a-Q4_K_M.gguf', sizeBytes: 30 * GB2 },
+    { filename: 'a-Q2_K.gguf', sizeBytes: 12 * GB2 },
+  ]);
+  const r = classify({ vramBytes: 16 * GB2, contextLength: 4096, model: m });
+  assert.equal(r.quant, 'Q2_K');
+  assert.ok(r.warning.includes('非推奨'));
+});
+
+test('MoEは入らなくてもオフロードなら動く', () => {
+  const m = model([{ filename: 'a-Q4_K_M.gguf', sizeBytes: 20 * GB2 }], 'Qwen3.6-35B-A3B', 35);
+  const r = classify({ vramBytes: 16 * GB2, contextLength: 4096, model: m });
+  assert.equal(r.verdict, 'offload');
+});
+
+test('denseで到底入らないときは no', () => {
+  const m = model([{ filename: 'a-Q2_K.gguf', sizeBytes: 60 * GB2 }], 'huge-70B', 70);
+  const r = classify({ vramBytes: 8 * GB2, contextLength: 4096, model: m });
+  assert.equal(r.verdict, 'no');
+});

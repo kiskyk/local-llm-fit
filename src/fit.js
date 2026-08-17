@@ -58,3 +58,49 @@ export function offloadedBytes(fileBytes, totalBillions, activeBillions, config,
   const ratio = activeBillions / totalBillions;
   return fileBytes * ratio + OVERHEAD_BYTES + kvCacheBytes(config, contextLength);
 }
+
+const TIGHT_MARGIN_BYTES = 1 * GB;
+
+export function classify({ vramBytes, contextLength, model }) {
+  const candidates = model.files
+    .map((f) => ({ ...f, quant: parseQuant(f.filename) }))
+    .filter((f) => f.quant !== null)
+    .sort((a, b) => b.quant.rank - a.quant.rank); // 品質の高い順
+
+  const best = candidates[0] ?? null;
+
+  for (const [index, file] of candidates.entries()) {
+    const need = requiredBytes(file.sizeBytes, model.config, contextLength);
+    const headroomBytes = vramBytes - need;
+    if (headroomBytes < 0) continue;
+
+    const belowFloor = file.quant.rank < QUALITY_FLOOR_RANK;
+    const warning = belowFloor
+      ? `${file.quant.label} は実用下限の Q3_K_M を下回るため非推奨です`
+      : '';
+
+    // 最上位がそのまま入ったかどうかで comfortable / lower-quant を分ける
+    const verdict = headroomBytes < TIGHT_MARGIN_BYTES
+      ? 'tight'
+      : index === 0
+        ? 'comfortable'
+        : 'lower-quant';
+
+    return { verdict, quant: file.quant.label, headroomBytes, warning };
+  }
+
+  const moe = detectMoE(model.name, model.config);
+  if (moe.isMoE && moe.activeBillions && best) {
+    const need = offloadedBytes(best.sizeBytes, model.totalBillions, moe.activeBillions, model.config, contextLength);
+    if (need <= vramBytes) {
+      return {
+        verdict: 'offload',
+        quant: best.quant.label,
+        headroomBytes: vramBytes - need,
+        warning: 'エキスパートをCPU側に置く構成（llama.cpp の --override-tensor）が必要です',
+      };
+    }
+  }
+
+  return { verdict: 'no', quant: null, headroomBytes: null, warning: '' };
+}
