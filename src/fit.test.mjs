@@ -201,3 +201,18 @@ test('configもパラメータ数もない巨大モデルはcomfortableと誤判
   const r = classify({ vramBytes: 8 * GB, contextLength: 4096, model: m });
   assert.equal(r.verdict, 'no');
 });
+
+test('分割GGUFは同じ量子化ラベルでサイズを合算する', () => {
+  const result = normalizeModel({
+    modelId: 'unsloth/big-30B-GGUF',
+    tree: [
+      { path: 'big-Q8_0-00001-of-00002.gguf', size: 20 * GB, type: 'file' },
+      { path: 'big-Q8_0-00002-of-00002.gguf', size: 12 * GB, type: 'file' },
+      { path: 'big-Q4_K_M.gguf', size: 18 * GB, type: 'file' },
+    ],
+    config: {},
+  });
+  assert.equal(result.files.length, 2);
+  const q8 = result.files.find((f) => f.filename.includes('Q8_0'));
+  assert.equal(q8.sizeBytes, 32 * GB);
+});

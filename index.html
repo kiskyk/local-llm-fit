@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ローカルLLM適合チェッカー</title>
+<style>
+:root { --paper:#f5efe3; --card:#fffcf5; --ink:#43362a; --muted:#93826d; --wood:#a8683a; --line:#e6dbc7; }
+body { font-family:"Hiragino Sans","Yu Gothic UI",system-ui,sans-serif; background:var(--paper); color:var(--ink); max-width:760px; margin:0 auto; padding:24px 16px 48px; line-height:1.7; }
+select { font-size:1rem; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+button { font-size:1.05rem; font-weight:600; padding:12px 32px; margin-top:16px; border:none; border-radius:999px; background:var(--wood); color:#fff8ee; cursor:pointer; }
+button:disabled { opacity:.5; cursor:wait; }
+.note { font-size:.85rem; color:var(--muted); border-left:3px solid var(--line); padding-left:10px; margin:20px 0; }
+.item { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 18px; margin-bottom:10px; }
+.badge { display:inline-block; font-size:.75rem; border-radius:999px; padding:2px 12px; margin-right:8px; }
+.warn { color:#b3402e; font-size:.85rem; margin-top:6px; }
+</style>
+</head>
+<body>
+<h1>ローカルLLM適合チェッカー</h1>
+<p>GPUを選ぶと、実用品質で動かせるモデルと推奨量子化を表示します。</p>
+<label>GPU <select id="gpu"></select></label>
+<label>コンテキスト長 <select id="ctx">
+  <option value="4096">4096</option><option value="8192">8192</option>
+  <option value="16384">16384</option><option value="32768">32768</option>
+</select></label>
+<button id="go">判定する</button>
+<div id="result"></div>
+<footer class="note">当サイトはAmazonアソシエイト・プログラムの参加者です。</footer>
+<script type="module" src="./src/ui.js"></script>
+</body>
+</html>

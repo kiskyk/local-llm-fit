@@ -144,9 +144,22 @@ export function hasUsableConfig(config) {
 }
 
 export function normalizeModel({ modelId, tree, config, gguf }) {
-  const files = tree
-    .filter((entry) => entry.type === 'file' && entry.path.toLowerCase().endsWith('.gguf'))
-    .map((entry) => ({ filename: entry.path, sizeBytes: entry.size }));
+  // 分割GGUF（-00001-of-00002 等）を1ファイルずつ独立に扱うと、断片のサイズで
+  // 「収まる」と誤判定する。同じ量子化ラベルのファイルはサイズを合算して1つにする。
+  const byLabel = new Map();
+  const files = [];
+  for (const entry of tree) {
+    if (entry.type !== 'file' || !entry.path.toLowerCase().endsWith('.gguf')) continue;
+    const quant = parseQuant(entry.path);
+    const merged = quant && byLabel.get(quant.label);
+    if (merged) {
+      merged.sizeBytes += entry.size;
+    } else {
+      const file = { filename: entry.path, sizeBytes: entry.size };
+      files.push(file);
+      if (quant) byLabel.set(quant.label, file);
+    }
+  }
   // HF APIのggufメタデータが返す正確なパラメータ数を優先し、無ければ名前から読む
   const totalBillions = Number.isFinite(gguf?.total)
     ? gguf.total / 1e9
