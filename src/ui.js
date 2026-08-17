@@ -8,7 +8,8 @@ const hf = (path) => fetch(`/api/hf?path=${encodeURIComponent(path)}`).then((r) 
 // 一覧APIはファイルサイズを返さないため、モデルごとに /tree/main を追加で取得する。
 // 直列だと50件×2リクエストで待ちが長いので、少数ずつ並列にする。
 export async function loadModels(limit = 50) {
-  const list = await hf(`/api/models?filter=gguf&sort=downloads&direction=-1&limit=${limit}`);
+  // pipeline_tagで絞らないと、DL数の多い音声認識・TTS・埋め込みモデルがLLMより上に並ぶ
+  const list = await hf(`/api/models?pipeline_tag=text-generation&filter=gguf&sort=downloads&direction=-1&limit=${limit}`);
   const results = [];
   const CONCURRENCY = 8;
   for (let i = 0; i < list.length; i += CONCURRENCY) {
@@ -24,6 +25,7 @@ export async function loadModels(limit = 50) {
           config: detail.config ?? {},
           gguf: detail.gguf,
         });
+        model.downloads = entry.downloads ?? 0;
         if (model.files.length > 0 && model.totalBillions) return model;
       } catch {
         // 1件取れなくても一覧全体は出す
@@ -60,7 +62,10 @@ function upgradeSuggestion(gpus, currentVramGB) {
 }
 
 export function render(container, judged, upgrade = null) {
-  judged.sort((a, b) => ORDER.indexOf(a.result.verdict) - ORDER.indexOf(b.result.verdict));
+  // 分類順を優先し、同じ分類の中ではダウンロード数の多い（＝よく知られた）モデルを上にする
+  judged.sort((a, b) =>
+    (ORDER.indexOf(a.result.verdict) - ORDER.indexOf(b.result.verdict)) ||
+    ((b.model.downloads ?? 0) - (a.model.downloads ?? 0)));
   const note = `<p class="note">この判定は推定値です。実測で確認できているのは RTX 5070 Ti (16GB) のみで、実際の使用量はコンテキスト長や実行環境によって変わります。</p>`;
   const upgradeHtml = upgrade
     ? `<p class="note">より大きなモデルを余裕をもって動かすなら: <a href="${amazonSearchUrl(upgrade.name)}" target="_blank" rel="noopener sponsored">${esc(upgrade.name)}（${upgrade.vramGB}GB）をAmazonで探す</a></p>`
