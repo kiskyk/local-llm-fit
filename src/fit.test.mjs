@@ -20,3 +20,39 @@ test('実用下限はQ3_K_Mである', () => {
   assert.equal(parseQuant('a-Q3_K_M.gguf').rank, QUALITY_FLOOR_RANK);
   assert.ok(parseQuant('a-Q2_K.gguf').rank < QUALITY_FLOOR_RANK);
 });
+
+import { kvCacheBytes, requiredBytes, OVERHEAD_BYTES } from './fit.js';
+
+const GB = 1024 ** 3;
+
+// gemma-3-27b-it 相当の構成
+const CONFIG = {
+  num_hidden_layers: 62,
+  num_attention_heads: 32,
+  num_key_value_heads: 16,
+  hidden_size: 5376,
+};
+
+test('オーバーヘッドは0.8GB', () => {
+  assert.equal(OVERHEAD_BYTES, 0.8 * GB);
+});
+
+test('KVキャッシュはコンテキスト長に比例する', () => {
+  const a = kvCacheBytes(CONFIG, 4096);
+  const b = kvCacheBytes(CONFIG, 8192);
+  assert.ok(a > 0);
+  assert.equal(b, a * 2);
+});
+
+test('必要VRAMはファイルサイズとオーバーヘッドとKVキャッシュの合計', () => {
+  const fileBytes = 14.3 * GB;
+  const total = requiredBytes(fileBytes, CONFIG, 4096);
+  assert.equal(total, fileBytes + OVERHEAD_BYTES + kvCacheBytes(CONFIG, 4096));
+});
+
+test('brainの実測と整合する（コンテキストを除いた分）', () => {
+  // gemma-3-27b-it: 14.3GB、16GB環境で余裕0.9GB
+  assert.ok(Math.abs((16 * GB - (14.3 * GB + OVERHEAD_BYTES)) - 0.9 * GB) < 0.01 * GB);
+  // gpt-oss-20b: 15.1GB、16GB環境で余裕0.1GB
+  assert.ok(Math.abs((16 * GB - (15.1 * GB + OVERHEAD_BYTES)) - 0.1 * GB) < 0.01 * GB);
+});

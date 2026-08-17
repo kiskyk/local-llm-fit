@@ -18,3 +18,21 @@ export function parseQuant(filename) {
   if (!found) return null;
   return { label: found, rank: QUANT_ORDER.indexOf(found) };
 }
+
+const GB = 1024 ** 3;
+
+// llama.cpp の計算バッファとフレームワークの占有分。brainの実測（16GB環境で
+// 14.3GBのモデルが余裕0.9GB）と整合する値。
+export const OVERHEAD_BYTES = 0.8 * GB;
+
+// K と V の2本ぶんを、レイヤー数 × KVヘッド数 × ヘッド次元 × トークン数 で持つ。
+// FP16 なので1要素2バイト。
+export function kvCacheBytes(config, contextLength) {
+  const headDim = config.hidden_size / config.num_attention_heads;
+  const kvHeads = config.num_key_value_heads ?? config.num_attention_heads;
+  return 2 * config.num_hidden_layers * kvHeads * headDim * contextLength * 2;
+}
+
+export function requiredBytes(fileBytes, config, contextLength) {
+  return fileBytes + OVERHEAD_BYTES + kvCacheBytes(config, contextLength);
+}
