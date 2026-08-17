@@ -46,9 +46,25 @@ const LABEL = {
 
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export function render(container, judged) {
+function amazonSearchUrl(gpuName) {
+  const tag = 'ASSOCIATE_TAG'; // アソシエイトIDを取得したら差し替える
+  return `https://www.amazon.co.jp/s?k=${encodeURIComponent(gpuName)}&tag=${tag}`;
+}
+
+// 選択中のGPUで「動かない」判定が出たモデルにも手が届く、VRAMの多いGPUを1つ提案する
+function upgradeSuggestion(gpus, currentVramGB) {
+  const bigger = gpus
+    .filter((g) => g.vramGB > currentVramGB && !g.name.startsWith('Apple'))
+    .sort((a, b) => a.vramGB - b.vramGB);
+  return bigger[0] ?? null;
+}
+
+export function render(container, judged, upgrade = null) {
   judged.sort((a, b) => ORDER.indexOf(a.result.verdict) - ORDER.indexOf(b.result.verdict));
   const note = `<p class="note">この判定は推定値です。実測で確認できているのは RTX 5070 Ti (16GB) のみで、実際の使用量はコンテキスト長や実行環境によって変わります。</p>`;
+  const upgradeHtml = upgrade
+    ? `<p class="note">より大きなモデルを余裕をもって動かすなら: <a href="${amazonSearchUrl(upgrade.name)}" target="_blank" rel="noopener sponsored">${esc(upgrade.name)}（${upgrade.vramGB}GB）をAmazonで探す</a></p>`
+    : '';
   container.innerHTML = note + judged.map(({ model, result }) => {
     const [text, color] = LABEL[result.verdict];
     const quant = result.quant ? `｜推奨 ${result.quant}` : '';
@@ -57,7 +73,7 @@ export function render(container, judged) {
       <span class="badge" style="background:${color};color:#fff8ee">${text}</span>
       <strong>${esc(model.name)}</strong>${quant}${warn}
     </div>`;
-  }).join('');
+  }).join('') + upgradeHtml;
 }
 
 async function main() {
@@ -77,7 +93,7 @@ async function main() {
       const vramBytes = gpus[Number(gpuSelect.value)].vramGB * 1024 ** 3;
       const contextLength = Number(document.getElementById('ctx').value);
       const judged = models.map((model) => ({ model, result: classify({ vramBytes, contextLength, model }) }));
-      render(container, judged);
+      render(container, judged, upgradeSuggestion(gpus, gpus[Number(gpuSelect.value)].vramGB));
     } catch (e) {
       container.innerHTML = `<p class="warn">モデル一覧の取得に失敗しました（${esc(String(e))}）。時間をおいて再読み込みしてください。</p>`;
     } finally {

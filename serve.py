@@ -1,7 +1,9 @@
 # serve.py — static file serving and /api/hf relay for local development
-import http.server, socketserver, urllib.parse, urllib.request
+import functools
+import http.server, os, socketserver, urllib.parse, urllib.request
 
-PORT = 8080
+PORT = 8772
+ROOT = os.path.dirname(os.path.abspath(__file__))
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -25,6 +27,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
-with socketserver.TCPServer(('127.0.0.1', PORT), Handler) as httpd:
+with socketserver.TCPServer(('127.0.0.1', PORT), functools.partial(Handler, directory=ROOT)) as httpd:
     print(f'http://127.0.0.1:{PORT}')
     httpd.serve_forever()
